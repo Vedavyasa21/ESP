@@ -12,6 +12,7 @@ import { AerisRecentEventsCard } from './components/AerisRecentEventsCard';
 import { AerisAlertStatusCard } from './components/AerisAlertStatusCard';
 import { AerisQuickInfoCard } from './components/AerisQuickInfoCard';
 import { AerisNotificationModal } from './components/AerisNotificationModal';
+import { AerisEmergencyAlarmModal } from './components/AerisEmergencyAlarmModal';
 import { AerisLiveDataView } from './components/AerisLiveDataView';
 import { AerisHistoryView } from './components/AerisHistoryView';
 import { AerisAnalyticsView } from './components/AerisAnalyticsView';
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  const [isAlarmPopupDismissed, setIsAlarmPopupDismissed] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
   // Connectivity & Architecture State
@@ -195,13 +197,48 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [performPoll, pollIntervalMs]);
 
-  // Audio Alerts
+  // Handle Alarm transitions: Show pop-up modal & trigger browser notification
+  const prevAlarmRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (telemetry.alarm && !prevAlarmRef.current) {
+      setIsAlarmPopupDismissed(false);
+      alertService.triggerBrowserNotification(
+        '⚠️ GAS LEAKAGE DETECTED!',
+        `Gas reading (${telemetry.adc} ADC) has exceeded safety threshold of ${telemetry.threshold} ADC.`
+      );
+    }
+    prevAlarmRef.current = telemetry.alarm;
+  }, [telemetry.alarm, telemetry.adc, telemetry.threshold]);
+
+  // Flashing Browser Tab Title during Alarm
+  useEffect(() => {
+    if (!telemetry.alarm) {
+      document.title = 'AERIS · ESP32 Gas Monitor';
+      return;
+    }
+    let flag = false;
+    const titleInterval = setInterval(() => {
+      document.title = flag
+        ? `🚨 [ALARM: ${telemetry.adc} ADC] Gas Leak!`
+        : `⚠️ HAZARD: Threshold Exceeded`;
+      flag = !flag;
+    }, 700);
+    return () => {
+      clearInterval(titleInterval);
+      document.title = 'AERIS · ESP32 Gas Monitor';
+    };
+  }, [telemetry.alarm, telemetry.adc]);
+
+  // Audio Alerts: Loud siren loop when alarm active and not muted
   useEffect(() => {
     if (telemetry.alarm && connectionStatus === 'connected' && !isMuted) {
       alertService.startAlarmLoop();
     } else {
       alertService.stopAlarm();
     }
+    return () => {
+      alertService.stopAlarm();
+    };
   }, [telemetry.alarm, connectionStatus, isMuted]);
 
   // Interactive Threshold Change
@@ -543,6 +580,16 @@ export const App: React.FC = () => {
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
         isAlarm={isAlarm}
+      />
+
+      {/* 6. Emergency Gas Leak Pop-up Modal */}
+      <AerisEmergencyAlarmModal
+        isOpen={isAlarm && !isAlarmPopupDismissed}
+        adc={telemetry.adc}
+        threshold={telemetry.threshold}
+        isMuted={isMuted}
+        onToggleMute={() => setIsMuted(!isMuted)}
+        onDismiss={() => setIsAlarmPopupDismissed(true)}
       />
     </div>
   );

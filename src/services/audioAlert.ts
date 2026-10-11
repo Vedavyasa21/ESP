@@ -35,56 +35,60 @@ class AudioAlertService {
   }
 
   /**
-   * Plays a single restrained, double-beep industrial alert tone
+   * Plays a loud, distinctive 3-pulse industrial gas detector alarm siren
    */
-  public playBeep() {
+  public playAlarmSiren() {
     if (this.isMuted) return;
     this.initContext();
     if (!this.audioCtx) return;
 
     try {
       const now = this.audioCtx.currentTime;
-      
-      // Beep 1
-      const osc1 = this.audioCtx.createOscillator();
-      const gain1 = this.audioCtx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(880, now); // A5 note
-      gain1.gain.setValueAtTime(0.08, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      osc1.connect(gain1);
-      gain1.connect(this.audioCtx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.12);
 
-      // Beep 2
-      const osc2 = this.audioCtx.createOscillator();
-      const gain2 = this.audioCtx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, now + 0.18);
-      gain2.gain.setValueAtTime(0.08, now + 0.18);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-      osc2.connect(gain2);
-      gain2.connect(this.audioCtx.destination);
-      osc2.start(now + 0.18);
-      osc2.stop(now + 0.3);
+      // 3 rapid emergency pulses (ISO temporal-3 pattern)
+      const pulses = [0, 0.16, 0.32];
+      pulses.forEach((offset) => {
+        const osc = this.audioCtx!.createOscillator();
+        const gain = this.audioCtx!.createGain();
+
+        // Piercing dual-frequency harmonic tone
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(1400, now + offset);
+        osc.frequency.exponentialRampToValueAtTime(950, now + offset + 0.11);
+
+        gain.gain.setValueAtTime(0.35, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.12);
+
+        osc.connect(gain);
+        gain.connect(this.audioCtx!.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.12);
+      });
 
       // Mobile Haptic Vibration
       if ('vibrate' in navigator) {
-        navigator.vibrate([120, 60, 120]);
+        navigator.vibrate([180, 80, 180, 80, 240]);
       }
-    } catch {
-      // Audio context might be restricted before user gesture
+    } catch (e) {
+      console.warn('Audio alert playback error:', e);
     }
+  }
+
+  /**
+   * Legacy single beep method
+   */
+  public playBeep() {
+    this.playAlarmSiren();
   }
 
   public startAlarmLoop() {
     if (this.isAlarmPlaying) return;
     this.isAlarmPlaying = true;
-    this.playBeep();
+    this.playAlarmSiren();
     this.intervalId = window.setInterval(() => {
-      this.playBeep();
-    }, 1500);
+      this.playAlarmSiren();
+    }, 800); // Urgent repeating siren every 800ms
   }
 
   public stopAlarm() {
