@@ -49,7 +49,7 @@ export async function fetchCloudCurrent(
 }
 
 function parseCloudData(data: any, defaultDeviceId?: string): ESPTelemetry {
-  const adc = Number(data.adc ?? 842);
+  const adc = Number(data.adc ?? data.val ?? 842);
   const threshold = Number(data.threshold ?? 1800);
   const thresholdLow = Number(data.thresholdLow ?? 1650);
   const pinVoltage = typeof data.pinVoltage === 'number' ? data.pinVoltage : Number(((adc / 4095) * 3.3).toFixed(2));

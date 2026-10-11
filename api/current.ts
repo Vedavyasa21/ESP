@@ -14,6 +14,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   if (!record) {
     return res.status(200).json({
       adc: 1248,
+      val: 1248,
       pinVoltage: 1.01,
       sensorVoltage: 1.61,
       threshold: 1800,

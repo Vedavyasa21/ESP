@@ -26,8 +26,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'POST') {
     const data = req.body;
-    if (!data || typeof data.adc !== 'number') {
-      return res.status(400).json({ error: 'Missing adc value' });
+    const rawVal = typeof data?.adc === 'number' ? data.adc : typeof data?.val === 'number' ? data.val : null;
+    if (rawVal === null) {
+      return res.status(400).json({ error: 'Missing adc or val value' });
     }
 
     const now = new Date().toISOString();
@@ -35,10 +36,11 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const isAlarm = Boolean(data.alarm);
 
     const record = {
-      deviceId: data.deviceId || 'aeris-esp32-01',
-      adc: Math.round(data.adc),
-      pinVoltage: typeof data.pinVoltage === 'number' ? Number(data.pinVoltage.toFixed(2)) : Number(((data.adc / 4095) * 3.3).toFixed(2)),
-      sensorVoltage: typeof data.sensorVoltage === 'number' ? Number(data.sensorVoltage.toFixed(2)) : Number((((data.adc / 4095) * 3.3) / 0.625).toFixed(2)),
+      deviceId: data.deviceId || 'AERIS-01',
+      adc: Math.round(rawVal),
+      val: Math.round(rawVal),
+      pinVoltage: typeof data.pinVoltage === 'number' ? Number(data.pinVoltage.toFixed(2)) : Number(((rawVal / 4095) * 3.3).toFixed(2)),
+      sensorVoltage: typeof data.sensorVoltage === 'number' ? Number(data.sensorVoltage.toFixed(2)) : Number((((rawVal / 4095) * 3.3) / 0.625).toFixed(2)),
       threshold: typeof data.threshold === 'number' ? Math.round(data.threshold) : 1800,
       thresholdLow: typeof data.thresholdLow === 'number' ? Math.round(data.thresholdLow) : 1650,
       alarm: isAlarm,
@@ -91,6 +93,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     if (!globalThis.__aeris_latest_telemetry) {
       return res.status(200).json({
         adc: 1248,
+        val: 1248,
         pinVoltage: 1.01,
         sensorVoltage: 1.61,
         threshold: 1800,

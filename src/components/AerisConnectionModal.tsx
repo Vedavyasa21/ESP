@@ -56,11 +56,18 @@ export const AerisConnectionModal: React.FC<AerisConnectionModalProps> = ({
   const arduinoWifiSnippet = `// === AERIS ESP32 WI-FI CLOUD SENDER ===
 // Flash this code to your ESP32 in Arduino IDE!
 #include <WiFi.h>
+#include <WebServer.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-const char* ssid     = "YOUR_WIFI_NAME";     // <- Enter your Wi-Fi name
-const char* password = "YOUR_WIFI_PASSWORD"; // <- Enter your Wi-Fi password
+// Option 1: Mobile Hotspot (Turn on hotspot on your phone!)
+const char* ssid     = "ESP32_HOTSPOT";  // Wi-Fi Name
+const char* password = "password123";    // Wi-Fi Password
+
+// Option 2: ESP32 Access Point (Always active at 192.168.4.1!)
+const char* ap_ssid  = "ESP32_GAS_ALERT";
+const char* ap_pass  = "12345678";
+
 const char* api_url  = "${telemetryUrl}";
 
 #define PIN_MQ2_ADC 34
@@ -68,6 +75,14 @@ const char* api_url  = "${telemetryUrl}";
 #define PIN_LED_RED 19
 #define PIN_BUZZER 23
 const int THRESHOLD = 1800;
+
+WebServer server(80);
+int currentVal = 0;
+
+void handleApi() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", "{\\"val\\":" + String(currentVal) + ",\\"threshold\\":1800}");
+}
 
 void setup() {
   Serial.begin(115200);
@@ -77,39 +92,44 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
   analogReadResolution(12);
 
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\\nWi-Fi Connected! IP: " + WiFi.localIP().toString());
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(ap_ssid, ap_pass); // Starts http://192.168.4.1
+  WiFi.begin(ssid, password);    // Connects to phone hotspot
+
+  server.on("/api", HTTP_GET, handleApi);
+  server.begin();
+  Serial.println("Wi-Fi Started! AP: ESP32_GAS_ALERT (192.168.4.1)");
 }
 
 void loop() {
+  server.handleClient();
   long sum = 0;
   for (int i = 0; i < 15; i++) { sum += analogRead(PIN_MQ2_ADC); delay(4); }
-  int adc = sum / 15;
-  bool isAlarm = (adc >= THRESHOLD);
+  currentVal = sum / 15;
+  bool isAlarm = (currentVal >= THRESHOLD);
 
   digitalWrite(PIN_LED_RED, isAlarm ? HIGH : LOW);
   digitalWrite(PIN_LED_GREEN, isAlarm ? LOW : HIGH);
   digitalWrite(PIN_BUZZER, isAlarm ? HIGH : LOW);
 
+  // Serial Monitor Output
+  Serial.printf("[READING] val: %d | Status: %s\\n", currentVal, isAlarm ? "ALARM" : "SAFE");
+
+  // Post to Vercel Cloud
   if (WiFi.status() == WL_CONNECTED) {
     WiFiClientSecure client;
-    client.setInsecure(); // Connect securely to Vercel HTTPS
+    client.setInsecure();
     client.setTimeout(2500);
 
     HTTPClient http;
     if (http.begin(client, api_url)) {
       http.addHeader("Content-Type", "application/json");
-      String json = "{\\"deviceId\\":\\"${editDeviceId}\\",\\"adc\\":" + String(adc) +
+      String json = "{\\"deviceId\\":\\"${editDeviceId}\\",\\"adc\\":" + String(currentVal) +
+                    ",\\"val\\":" + String(currentVal) +
                     ",\\"threshold\\":" + String(THRESHOLD) +
                     ",\\"alarm\\":" + String(isAlarm ? "true" : "false") +
                     ",\\"ready\\":true}";
-      int code = http.POST(json);
-      Serial.printf("Posted to Vercel: ADC %d -> HTTP %d\\n", adc, code);
+      http.POST(json);
       http.end();
     }
   }
@@ -340,20 +360,41 @@ void loop() {
                   </button>
                 </div>
 
+                {/* Pre-configured Credentials Card */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-[#F7F5F0] border border-[#EBE5DB]">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-[#8A8F95] uppercase block">
+                      1. Mobile Phone Hotspot:
+                    </span>
+                    <div className="text-[11px] font-mono text-[#1A1D20]">
+                      SSID: <strong>ESP32_HOTSPOT</strong><br />
+                      Password: <strong>password123</strong> (2.4 GHz)
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-[#8A8F95] uppercase block">
+                      2. ESP32 Direct Hotspot:
+                    </span>
+                    <div className="text-[11px] font-mono text-[#1A1D20]">
+                      SSID: <strong>ESP32_GAS_ALERT</strong><br />
+                      Password: <strong>12345678</strong> (IP: 192.168.4.1)
+                    </div>
+                  </div>
+                </div>
+
                 <ol className="list-decimal list-inside space-y-2 text-[#4A4F55] leading-relaxed pl-1 text-[11.5px]">
                   <li>
-                    Open <strong>Arduino IDE</strong> and open file{' '}
-                    <code className="bg-[#F2EDE4] px-1.5 py-0.5 rounded text-[#1A1D20]">
-                      firmware/aeris_cloud_telemetry.ino
+                    In <strong>Arduino IDE</strong>, open file{' '}
+                    <code className="bg-[#F2EDE4] px-1.5 py-0.5 rounded text-[#1A1D20] font-mono">
+                      firmware/aeris_esp32_wifi_val/aeris_esp32_wifi_val.ino
                     </code>{' '}
                     (or click <strong>Copy Arduino Sketch</strong> above).
                   </li>
                   <li>
-                    Replace <code className="bg-[#F2EDE4] px-1.5 py-0.5 rounded font-mono">YOUR_WIFI_NAME</code> and{' '}
-                    <code className="bg-[#F2EDE4] px-1.5 py-0.5 rounded font-mono">YOUR_WIFI_PASSWORD</code> with your router or mobile hotspot Wi-Fi credentials.
+                    Turn on your phone's personal hotspot with name <strong>ESP32_HOTSPOT</strong> and password <strong>password123</strong> (or use your own router credentials).
                   </li>
                   <li>
-                    Click <strong>Upload</strong> in Arduino IDE to flash your ESP32. Once connected, live sensor data will stream straight to this website!
+                    Click <strong>Upload</strong> in Arduino IDE. The ESP32 will immediately print live gas values (val) to the Serial Monitor and stream them to this website!
                   </li>
                 </ol>
               </div>
@@ -434,7 +475,7 @@ void loop() {
                   </h4>
                 </div>
                 <p>
-                  In this mode, the ESP32 broadcasts its own Wi-Fi network named <strong>ESP32-Gas-Monitor</strong> (IP: <code className="bg-[#F2EDE4] px-1 rounded font-mono">192.168.4.1</code>).
+                  In this mode, the ESP32 broadcasts its own Wi-Fi network named <strong>ESP32_GAS_ALERT</strong> (Password: <strong>12345678</strong>, IP: <code className="bg-[#F2EDE4] px-1 rounded font-mono">192.168.4.1</code>).
                 </p>
                 <div className="p-3 bg-[#FFF8EE] border border-[#F0DDC0] rounded-xl flex items-start space-x-2 text-[#8C5D1F]">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
