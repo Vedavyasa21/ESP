@@ -72,6 +72,7 @@ export const App: React.FC = () => {
   });
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(new Date());
+  const [lastSerialLine, setLastSerialLine] = useState<string>('');
   const [history, setHistory] = useState<ReadingHistoryPoint[]>([
     { id: '1', timestamp: Date.now() - 1800000, timeLabel: '10:00', adc: 980, threshold: 1800 },
     { id: '2', timestamp: Date.now() - 1500000, timeLabel: '10:05', adc: 1250, threshold: 1800 },
@@ -92,6 +93,14 @@ export const App: React.FC = () => {
   );
 
   const isAlarm = telemetry.alarm;
+
+  // Dynamically calculate live min, avg, max based on current reading and session history
+  const allSessionAdcs = history.map((h) => h.adc).concat(telemetry.adc);
+  const minToday = Math.min(...allSessionAdcs);
+  const maxToday = Math.max(...allSessionAdcs);
+  const avgToday = Math.round(
+    allSessionAdcs.reduce((acc, v) => acc + v, 0) / allSessionAdcs.length
+  );
 
   // Append history
   const appendHistory = useCallback((point: { adc: number; threshold: number }) => {
@@ -273,7 +282,10 @@ export const App: React.FC = () => {
         (connected) => {
           setConnectionStatus(connected ? 'connected' : 'offline');
         },
-        telemetry.threshold
+        telemetry.threshold,
+        (raw) => {
+          setLastSerialLine(raw);
+        }
       );
       setMode('usb_serial');
       setDemoPreset('dynamic');
@@ -343,12 +355,30 @@ export const App: React.FC = () => {
                 unreadAlertsCount={isAlarm ? 2 : 1}
               />
 
+              {/* USB Live Stream Banner (Displays raw serial data as it changes) */}
+              {mode === 'usb_serial' && (
+                <div className="w-full bg-[#1A1D20] text-[#EDE9E1] px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs font-mono shadow-sm animate-fade-in border border-[#2D3136]">
+                  <div className="flex items-center space-x-2.5 truncate">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#4E8168] animate-pulse shrink-0" />
+                    <span className="text-[#8E9399] uppercase font-bold text-[10px] tracking-wider shrink-0">
+                      COM8 Serial:
+                    </span>
+                    <span className="truncate text-white font-semibold">
+                      {lastSerialLine || 'Streaming live data from ESP32 on COM8...'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-[#4E8168] font-extrabold uppercase tracking-wider shrink-0 pl-3">
+                    Active 115200 Baud
+                  </span>
+                </div>
+              )}
+
               {/* ROW 1: Hero Banner (8 cols) + Sensor Reading Arc Gauge (4 cols) */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
                 <div className="lg:col-span-8 flex flex-col">
                   <AerisHeroBanner
                     isAlarm={isAlarm}
-                    lastUpdatedText={lastUpdatedAt ? '2 seconds ago' : 'Just now'}
+                    lastUpdatedText={lastUpdatedAt ? 'Just now' : 'Connecting...'}
                   />
                 </div>
                 <div className="lg:col-span-4 flex flex-col">
@@ -356,9 +386,9 @@ export const App: React.FC = () => {
                     adc={telemetry.adc}
                     maxAdc={4095}
                     isAlarm={isAlarm}
-                    minToday={420}
-                    avgToday={892}
-                    maxToday={2260}
+                    minToday={minToday}
+                    avgToday={avgToday}
+                    maxToday={maxToday}
                   />
                 </div>
               </div>
