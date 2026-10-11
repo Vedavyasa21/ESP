@@ -35,3 +35,19 @@ Thumbs.db
 
 # Vercel
 .vercel
+
+# Firmware secrets & local credentials
+secrets.h
+**/secrets.h
+secrets.json
+**/secrets.json
+firmware/**/secrets.h
+!secrets.h.template
+!**/secrets.h.template
+
+# Local build artifacts
+build/
+**/build/
+build_test/
+*.bin
+*.elf
