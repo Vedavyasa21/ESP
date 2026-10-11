@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AERIS · ESP32 Gas Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            aeris: {
+              bg: '#F7F5F2',
+              card: '#FFFFFF',
+              border: '#ECEAE6',
+              green: '#588E75',
+              red: '#D14343',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#F7F5F2] text-[#17191C] font-sans antialiased min-h-screen pb-16 lg:pb-6">
+
+  <!-- Mobile Top Bar -->
+  <div class="flex items-center justify-between px-5 py-4 bg-[#F7F5F2] border-b border-[#ECEAE6] lg:hidden sticky top-0 z-30">
+    <span class="font-bold text-base tracking-wider text-[#17191C]">AERIS</span>
+    <button class="p-1.5 rounded-lg text-[#17191C]"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4 space-y-4">
+    <!-- Alert Banner (shown in alert) -->
+    <div id="alertBanner" class="hidden bg-[#FEECEC] border border-[#FCA5A5] rounded-2xl p-4 mb-4 flex items-start space-x-3.5">
+      <div class="p-1.5 rounded-lg bg-red-100 text-red-600 shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      </div>
+      <div>
+        <h3 class="text-sm font-bold text-[#991B1B]">Gas Leakage Detected!</h3>
+        <p class="text-xs text-[#7F1D1D] mt-0.5">Gas level has exceeded the threshold.</p>
+      </div>
+    </div>
+
+    <!-- Header Row -->
+    <div class="flex items-start justify-between">
+      <div>
+        <h1 id="headerTitle" class="text-2xl sm:text-3xl font-bold tracking-tight text-[#17191C]">Good Air</h1>
+        <p id="headerSubtitle" class="text-xs sm:text-sm text-gray-500 mt-0.5">No gas leakage detected. Everything is normal.</p>
+      </div>
+      <div class="flex flex-col items-end">
+        <div class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-[#EAF4EE] text-[#2E7D4E] text-xs font-semibold">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#2E7D4E]"></span>
+          <span>Connected</span>
+        </div>
+        <span class="text-[11px] text-gray-400 mt-1">Last updated: 2s ago</span>
+      </div>
+    </div>
+
+    <!-- Primary Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Arc Gauge Card -->
+      <div class="bg-white rounded-2xl border border-[#ECEAE6] p-6 shadow-sm flex flex-col items-center justify-center">
+        <div class="relative w-64 h-38 flex items-center justify-center">
+          <svg viewBox="0 0 260 155" class="w-full h-full">
+            <path d="M 35 135 A 95 95 0 0 1 225 135" fill="none" stroke="#E4E7E4" stroke-width="20" stroke-linecap="round"/>
+            <path id="gaugePath" d="M 35 135 A 95 95 0 0 1 225 135" fill="none" stroke="#588E75" stroke-width="20" stroke-linecap="round" stroke-dasharray="298.45" stroke-dashoffset="200"/>
+          </svg>
+          <div class="absolute inset-0 top-8 flex flex-col items-center justify-center text-center">
+            <span id="adcText" class="text-4xl sm:text-5xl font-bold tracking-tight">842</span>
+            <span class="text-xs font-medium text-gray-500 mt-0.5">ADC Value</span>
+            <span class="text-[11px] text-gray-400 mt-0.5">out of 4095</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column -->
+      <div class="flex flex-col space-y-4">
+        <!-- Threshold Box -->
+        <div class="bg-white rounded-2xl border border-[#ECEAE6] p-5 shadow-sm">
+          <div class="text-xs text-gray-500 font-medium">Threshold</div>
+          <div class="text-2xl font-bold text-[#17191C] mt-1">1800</div>
+          <div class="relative mt-4 h-2.5 w-full bg-[#EAE8E4] rounded-full">
+            <div id="threshFill" class="h-full rounded-full bg-[#588E75]" style="width: 44%"></div>
+            <div id="threshHandle" class="absolute top-1/2 -translate-y-1/2 w-1.5 h-5 rounded-full bg-[#2D3748] z-10" style="left: calc(44% - 3px)"></div>
+          </div>
+        </div>
+
+        <!-- Mini Statuses -->
+        <div class="grid grid-cols-2 gap-3.5">
+          <div class="bg-white rounded-2xl border border-[#ECEAE6] p-4 shadow-sm flex items-center space-x-3.5">
+            <div id="gasIconBox" class="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21a9 9 0 01-9-9c0-4.97 4.03-9 9-9 4.97 0 9 4.03 9 9 0 4.97-4.03 9-9 9z"/></svg>
+            </div>
+            <div>
+              <div class="text-[11px] text-gray-500 font-medium leading-none">Gas Level</div>
+              <div id="gasText" class="text-sm font-bold mt-1 leading-none text-emerald-700">Normal</div>
+            </div>
+          </div>
+          <div class="bg-white rounded-2xl border border-[#ECEAE6] p-4 shadow-sm flex items-center space-x-3.5">
+            <div id="airIconBox" class="p-2 rounded-xl bg-emerald-50 text-emerald-700">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <div>
+              <div class="text-[11px] text-gray-500 font-medium leading-none">Air Quality</div>
+              <div id="airText" class="text-sm font-bold mt-1 leading-none text-emerald-700">Safe</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actuators -->
+    <div class="grid grid-cols-3 gap-3.5">
+      <div class="bg-white rounded-2xl border border-[#ECEAE6] p-4 shadow-sm flex items-center space-x-3">
+        <div id="ledGreenDot" class="w-3.5 h-3.5 rounded-full bg-[#2E7D4E]"></div>
+        <div><div class="text-[11px] text-gray-500 font-medium leading-none">Green LED</div><div id="ledGreenText" class="text-sm font-bold text-[#17191C] mt-1 leading-none">ON</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-[#ECEAE6] p-4 shadow-sm flex items-center space-x-3">
+        <div id="ledRedDot" class="w-3.5 h-3.5 rounded-full bg-gray-300"></div>
+        <div><div class="text-[11px] text-gray-500 font-medium leading-none">Red LED</div><div id="ledRedText" class="text-sm font-bold text-[#17191C] mt-1 leading-none">OFF</div></div>
+      </div>
+      <div class="bg-white rounded-2xl border border-[#ECEAE6] p-4 shadow-sm flex items-center space-x-3">
+        <div id="buzzerDot" class="w-3.5 h-3.5 rounded-full bg-gray-300"></div>
+        <div><div class="text-[11px] text-gray-500 font-medium leading-none">Buzzer</div><div id="buzzerText" class="text-sm font-bold text-[#17191C] mt-1 leading-none">OFF</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function poll() {
+      try {
+        const res = await fetch('/api?t=' + Date.now());
+        const data = await res.json();
+        const isAlarm = data.alarm;
+
+        document.getElementById('adcText').innerText = data.adc;
+        const pct = Math.min(1, Math.max(0, data.adc / 4095));
+        const offset = 298.45 * (1 - pct);
+        const path = document.getElementById('gaugePath');
+        path.setAttribute('stroke-dashoffset', offset);
+        path.setAttribute('stroke', isAlarm ? '#D14343' : '#588E75');
+
+        if (isAlarm) {
+          document.getElementById('alertBanner').classList.remove('hidden');
+          document.getElementById('headerTitle').innerText = 'Gas Leakage Detected!';
+          document.getElementById('headerSubtitle').innerText = 'Gas level has exceeded the threshold.';
+          document.getElementById('threshFill').className = 'h-full rounded-full bg-[#D14343]';
+          document.getElementById('gasText').innerText = 'High';
+          document.getElementById('gasText').className = 'text-sm font-bold mt-1 leading-none text-red-600';
+          document.getElementById('airText').innerText = 'Unsafe';
+          document.getElementById('airText').className = 'text-sm font-bold mt-1 leading-none text-red-600';
+          document.getElementById('ledGreenDot').className = 'w-3.5 h-3.5 rounded-full bg-gray-300';
+          document.getElementById('ledGreenText').innerText = 'OFF';
+          document.getElementById('ledRedDot').className = 'w-3.5 h-3.5 rounded-full bg-red-600 animate-pulse';
+          document.getElementById('ledRedText').innerText = 'ON';
+          document.getElementById('buzzerDot').className = 'w-3.5 h-3.5 rounded-full bg-red-600 animate-pulse';
+          document.getElementById('buzzerText').innerText = 'ON';
+        } else {
+          document.getElementById('alertBanner').classList.add('hidden');
+          document.getElementById('headerTitle').innerText = 'Good Air';
+          document.getElementById('headerSubtitle').innerText = 'No gas leakage detected. Everything is normal.';
+          document.getElementById('threshFill').className = 'h-full rounded-full bg-[#588E75]';
+          document.getElementById('gasText').innerText = 'Normal';
+          document.getElementById('gasText').className = 'text-sm font-bold mt-1 leading-none text-emerald-700';
+          document.getElementById('airText').innerText = 'Safe';
+          document.getElementById('airText').className = 'text-sm font-bold mt-1 leading-none text-emerald-700';
+          document.getElementById('ledGreenDot').className = 'w-3.5 h-3.5 rounded-full bg-[#2E7D4E]';
+          document.getElementById('ledGreenText').innerText = 'ON';
+          document.getElementById('ledRedDot').className = 'w-3.5 h-3.5 rounded-full bg-gray-300';
+          document.getElementById('ledRedText').innerText = 'OFF';
+          document.getElementById('buzzerDot').className = 'w-3.5 h-3.5 rounded-full bg-gray-300';
+          document.getElementById('buzzerText').innerText = 'OFF';
+        }
+      } catch(e) {}
+    }
+    setInterval(poll, 1000);
+    poll();
+  </script>
+</body>
+</html>
