@@ -106,7 +106,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const age = Date.now() - new Date(globalThis.__aeris_latest_telemetry.updatedAt).getTime();
     return res.status(200).json({
       ...globalThis.__aeris_latest_telemetry,
-      deviceOnline: age < 6000,
+      deviceOnline: age < 12000,
     });
   }
 

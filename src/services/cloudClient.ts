@@ -7,14 +7,15 @@ import { ESPTelemetry, AlarmEvent } from '../types';
 
 export async function fetchCloudCurrent(
   baseUrl: string,
-  deviceId: string,
+  deviceId?: string,
   timeoutMs: number = 3000
 ): Promise<ESPTelemetry> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const cleanBase = baseUrl.replace(/\/+$/, '');
-  const url = `${cleanBase}/api/devices/${encodeURIComponent(deviceId)}/current?_cb=${Date.now()}`;
+  const cleanBase = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
+  const query = `_cb=${Date.now()}${deviceId ? `&deviceId=${encodeURIComponent(deviceId)}` : ''}`;
+  const url = cleanBase ? `${cleanBase}/api/telemetry?${query}` : `/api/telemetry?${query}`;
 
   try {
     const res = await fetch(url, {
@@ -27,31 +28,58 @@ export async function fetchCloudCurrent(
     });
 
     if (!res.ok) {
-      throw new Error(`Cloud API HTTP ${res.status}: ${res.statusText}`);
+      // Fallback attempt to /api/current if /api/telemetry is unavailable
+      const fallbackUrl = cleanBase ? `${cleanBase}/api/current?${query}` : `/api/current?${query}`;
+      const fallbackRes = await fetch(fallbackUrl, {
+        headers: { 'Accept': 'application/json', 'Cache-Control': 'no-cache' },
+        signal: controller.signal,
+      });
+      if (!fallbackRes.ok) {
+        throw new Error(`Cloud API HTTP ${res.status}: ${res.statusText}`);
+      }
+      const data = await fallbackRes.json();
+      return parseCloudData(data, deviceId);
     }
 
     const data = await res.json();
-    return {
-      adc: Number(data.adc),
-      threshold: Number(data.threshold),
-      alarm: Boolean(data.alarm),
-      ready: Boolean(data.ready),
-      deviceId: data.deviceId,
-      uptime: data.uptimeMs,
-      updatedAt: data.updatedAt,
-      deviceOnline: Boolean(data.deviceOnline),
-    };
+    return parseCloudData(data, deviceId);
   } finally {
     clearTimeout(timer);
   }
 }
 
+function parseCloudData(data: any, defaultDeviceId?: string): ESPTelemetry {
+  const adc = Number(data.adc ?? 842);
+  const threshold = Number(data.threshold ?? 1800);
+  const thresholdLow = Number(data.thresholdLow ?? 1650);
+  const pinVoltage = typeof data.pinVoltage === 'number' ? data.pinVoltage : Number(((adc / 4095) * 3.3).toFixed(2));
+  const sensorVoltage = typeof data.sensorVoltage === 'number' ? data.sensorVoltage : Number((pinVoltage / 0.625).toFixed(2));
+
+  return {
+    adc,
+    threshold,
+    thresholdLow,
+    pinVoltage,
+    sensorVoltage,
+    alarm: Boolean(data.alarm),
+    ready: data.ready !== undefined ? Boolean(data.ready) : true,
+    deviceId: data.deviceId || defaultDeviceId || 'AERIS-01',
+    uptime: data.uptimeMs ?? data.uptime ?? 0,
+    uptimeMs: data.uptimeMs ?? data.uptime ?? 0,
+    updatedAt: data.updatedAt,
+    deviceOnline: Boolean(data.deviceOnline),
+    green_led: Boolean(data.green_led),
+    red_led: Boolean(data.red_led),
+    buzzer: Boolean(data.buzzer),
+  };
+}
+
 export async function fetchCloudEvents(
   baseUrl: string,
-  deviceId: string
+  _deviceId?: string
 ): Promise<AlarmEvent[]> {
-  const cleanBase = baseUrl.replace(/\/+$/, '');
-  const url = `${cleanBase}/api/devices/${encodeURIComponent(deviceId)}/events?_cb=${Date.now()}`;
+  const cleanBase = baseUrl ? baseUrl.replace(/\/+$/, '') : '';
+  const url = cleanBase ? `${cleanBase}/api/events?_cb=${Date.now()}` : `/api/events?_cb=${Date.now()}`;
 
   try {
     const res = await fetch(url);

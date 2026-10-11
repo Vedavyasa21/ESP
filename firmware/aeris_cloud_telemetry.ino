@@ -47,10 +47,10 @@ const unsigned long WARMUP_TIME_MS = 20000; // 20s sensor heater stabilization d
 const char* WIFI_SSID     = "YOUR_WIFI_NAME";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// Cloud Backend Endpoint (Firebase Cloud Function, Vercel Serverless, or Node.js)
-const char* API_URL       = "https://YOUR_BACKEND_DOMAIN/api/telemetry";
-const char* DEVICE_ID     = "aeris-esp32-01";
-const char* DEVICE_TOKEN  = "YOUR_DEVICE_SPECIFIC_TOKEN";
+// Cloud Backend Endpoint (Live Vercel Serverless Function)
+const char* API_URL       = "https://gasdetection.vercel.app/api/telemetry";
+const char* DEVICE_ID     = "AERIS-01";
+const char* DEVICE_TOKEN  = "aeris-secure-token";
 
 // Optional: Root CA Certificate in PEM format for TLS verification
 // If prototyping on a local HTTPS server, you can configure accordingly.

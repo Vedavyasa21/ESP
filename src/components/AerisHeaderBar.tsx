@@ -1,31 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Volume2, VolumeX, Usb } from 'lucide-react';
+import { Bell, Volume2, VolumeX, Usb, Wifi } from 'lucide-react';
 import { ConnectionStatus, ConnectionMode } from '../types';
 
 interface AerisHeaderBarProps {
   connectionStatus: ConnectionStatus;
   mode?: ConnectionMode;
+  isCloudOnline?: boolean;
   isMuted: boolean;
   onToggleMute: () => void;
   onOpenSettings: () => void;
+  onOpenConnectionModal?: () => void;
   onOpenNotifications?: () => void;
   onConnectUsb?: () => void;
+  onSelectMode?: (mode: ConnectionMode) => void;
   unreadAlertsCount?: number;
 }
 
 export const AerisHeaderBar: React.FC<AerisHeaderBarProps> = ({
   connectionStatus,
   mode = 'simulation',
+  isCloudOnline = false,
   isMuted,
   onToggleMute,
   onOpenSettings,
+  onOpenConnectionModal,
   onOpenNotifications,
   onConnectUsb,
+  onSelectMode,
   unreadAlertsCount = 1,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
   const [dateStr, setDateStr] = useState<string>('');
-  const isOnline = connectionStatus === 'connected';
+  const isOnline =
+    mode === 'cloud'
+      ? isCloudOnline
+      : mode === 'usb_serial'
+      ? connectionStatus === 'connected'
+      : connectionStatus === 'connected';
 
   useEffect(() => {
     const updateClock = () => {
@@ -67,11 +78,58 @@ export const AerisHeaderBar: React.FC<AerisHeaderBarProps> = ({
       </div>
 
       {/* Right Controls, Connection Pill & Clock */}
-      <div className="flex items-center space-x-4 sm:space-x-5">
+      <div className="flex items-center space-x-3 sm:space-x-4">
+        {/* Wi-Fi Cloud Direct Connect Quick Action */}
+        <button
+          onClick={() => {
+            if (mode !== 'cloud') {
+              onSelectMode?.('cloud');
+            } else {
+              onOpenConnectionModal?.();
+            }
+          }}
+          title={
+            mode === 'cloud'
+              ? isCloudOnline
+                ? 'Wi-Fi Cloud Sync Active (Online)'
+                : 'Wi-Fi Cloud Sync Active (Waiting for ESP32...)'
+              : 'Switch to Wi-Fi Cloud Sync'
+          }
+          className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+            mode === 'cloud'
+              ? isCloudOnline
+                ? 'bg-[#EFF5F1] text-[#4E8168] border-[#DFECE3]'
+                : 'bg-[#FFF9EE] text-[#9E6E1D] border-[#F2E0BD]'
+              : 'bg-white text-aeris-textSecondary border-aeris-border hover:text-[#1A1D20]'
+          }`}
+        >
+          <Wifi className="w-3.5 h-3.5 stroke-[2]" />
+          <span>
+            {mode === 'cloud'
+              ? isCloudOnline
+                ? 'Wi-Fi Live'
+                : 'Wi-Fi (Wait)'
+              : 'Wi-Fi'}
+          </span>
+          {mode === 'cloud' && (
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isCloudOnline ? 'bg-[#4E8168] animate-pulse' : 'bg-[#E5A038]'
+              }`}
+            />
+          )}
+        </button>
+
         {/* USB Direct Connect Quick Action */}
         {onConnectUsb && (
           <button
-            onClick={onConnectUsb}
+            onClick={() => {
+              if (mode !== 'usb_serial') {
+                onConnectUsb();
+              } else {
+                onOpenConnectionModal?.();
+              }
+            }}
             title={
               mode === 'usb_serial'
                 ? 'Connected via USB Serial (COM8)'
@@ -84,8 +142,8 @@ export const AerisHeaderBar: React.FC<AerisHeaderBarProps> = ({
             }`}
           >
             <Usb className="w-3.5 h-3.5 stroke-[2]" />
-            <span className="hidden sm:inline">
-              {mode === 'usb_serial' ? 'USB (COM8)' : 'Connect USB'}
+            <span>
+              {mode === 'usb_serial' ? 'USB COM8' : 'USB'}
             </span>
           </button>
         )}
@@ -115,26 +173,32 @@ export const AerisHeaderBar: React.FC<AerisHeaderBarProps> = ({
           )}
         </button>
 
-        {/* ESP32 Connected Pill */}
+        {/* ESP32 Hardware Status Hub Pill */}
         <button
-          onClick={onOpenSettings}
-          title="Click to view hardware connection parameters"
-          className="inline-flex items-center space-x-2 px-4 py-2 rounded-full bg-[#EDE9E1] hover:bg-[#E4DFD5] border border-[#E0D9CE] text-[#1A1D20] text-xs font-bold tracking-wider transition-all cursor-pointer shadow-2xs"
+          onClick={onOpenConnectionModal || onOpenSettings}
+          title="Click to view hardware connection parameters & setup"
+          className="inline-flex items-center space-x-2 px-3.5 sm:px-4 py-2 rounded-full bg-[#EDE9E1] hover:bg-[#E4DFD5] border border-[#E0D9CE] text-[#1A1D20] text-xs font-bold tracking-wider transition-all cursor-pointer shadow-2xs"
         >
           <span
             className={`w-2 h-2 rounded-full ${
               isOnline
                 ? 'bg-[#4E8168] shadow-[0_0_8px_rgba(78,129,104,0.7)] animate-pulse'
+                : mode === 'cloud'
+                ? 'bg-[#E5A038] animate-pulse'
                 : 'bg-gray-400'
             }`}
           />
           <span className="text-[11px] font-extrabold uppercase tracking-wider">
-            {isOnline
-              ? mode === 'usb_serial'
-                ? 'ESP32 USB Online'
-                : mode === 'direct_ap'
-                ? 'ESP32 Wi-Fi (AP)'
-                : 'ESP32 Connected'
+            {mode === 'cloud'
+              ? isCloudOnline
+                ? 'ESP32 Wi-Fi Live'
+                : 'Wi-Fi (Waiting...)'
+              : mode === 'usb_serial'
+              ? 'ESP32 USB Online'
+              : mode === 'direct_ap'
+              ? 'ESP32 SoftAP'
+              : isOnline
+              ? 'ESP32 Connected'
               : 'Device Offline'}
           </span>
         </button>

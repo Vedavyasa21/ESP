@@ -17,6 +17,7 @@
 
 #include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <BlynkSimpleEsp32.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
@@ -26,9 +27,9 @@
 char ssid[] = "Your_WiFi_SSID";
 char pass[] = "Your_WiFi_Password";
 
-// --- VERCEL CLOUD ENDPOINT (Optional) ---
-// (Replace with your live Vercel URL once deployed, e.g. "https://esp-xxx.vercel.app/api/telemetry")
-const char* VERCEL_API_URL = ""; 
+// --- VERCEL CLOUD ENDPOINT ---
+// (Streams telemetry live to your Vercel web dashboard)
+const char* VERCEL_API_URL = "https://gasdetection.vercel.app/api/telemetry"; 
 
 // --- HARDWARE PIN DEFINITIONS ---
 #define PIN_MQ2_ADC   34   // MQ-2 Analog AO pin (12-bit ADC: 0 - 4095)
@@ -159,22 +160,27 @@ void checkSensors() {
     }
   }
 
-  // 6. Optional: Post Telemetry to Vercel Cloud Backend
+  // 6. Post Telemetry to Vercel Cloud Backend over HTTPS
   if (WiFi.status() == WL_CONNECTED && strlen(VERCEL_API_URL) > 8) {
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure(); // Connect securely to Vercel HTTPS
+    secureClient.setTimeout(2500);
+
     HTTPClient http;
-    http.begin(VERCEL_API_URL);
-    http.addHeader("Content-Type", "application/json");
+    if (http.begin(secureClient, VERCEL_API_URL)) {
+      http.addHeader("Content-Type", "application/json");
 
-    String payload = "{";
-    payload += "\"deviceId\":\"AERIS-01\",";
-    payload += "\"adc\":" + String(currentGasADC) + ",";
-    payload += "\"flame\":" + String(isFlameDetected ? "true" : "false") + ",";
-    payload += "\"alarm\":" + String(isAlarmActive ? "true" : "false") + ",";
-    payload += "\"ready\":" + String(isWarmedUp ? "true" : "false");
-    payload += "}";
+      String payload = "{";
+      payload += "\"deviceId\":\"AERIS-01\",";
+      payload += "\"adc\":" + String(currentGasADC) + ",";
+      payload += "\"flame\":" + String(isFlameDetected ? "true" : "false") + ",";
+      payload += "\"alarm\":" + String(isAlarmActive ? "true" : "false") + ",";
+      payload += "\"ready\":" + String(isWarmedUp ? "true" : "false");
+      payload += "}";
 
-    int httpCode = http.POST(payload);
-    http.end();
+      http.POST(payload);
+      http.end();
+    }
   }
 }
 

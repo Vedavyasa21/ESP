@@ -223,11 +223,27 @@ export const EndpointSettingsModal: React.FC<EndpointSettingsModalProps> = ({
                   type="text"
                   value={tempCloudEndpoint}
                   onChange={(e) => setTempCloudEndpoint(e.target.value)}
-                  placeholder="http://localhost:4000 or https://your-backend.domain"
+                  placeholder="https://gasdetection.vercel.app or /api/telemetry"
                   className="w-full px-3 py-2 text-xs bg-aeris-surface border border-aeris-border rounded focus:outline-none focus:border-aeris-accent focus:bg-white transition-colors"
                 />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTempCloudEndpoint('https://gasdetection.vercel.app')}
+                    className="px-2 py-0.5 rounded bg-aeris-surface hover:bg-aeris-border border border-aeris-border text-[10px] text-aeris-secondary"
+                  >
+                    Vercel Production
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempCloudEndpoint('')}
+                    className="px-2 py-0.5 rounded bg-aeris-surface hover:bg-aeris-border border border-aeris-border text-[10px] text-aeris-secondary"
+                  >
+                    Relative (/api)
+                  </button>
+                </div>
                 <p className="text-[10px] text-aeris-secondary mt-1">
-                  Used by HTTPS hosted clients (e.g. Vercel) to query cloud database without mixed content issues.
+                  Enables live telemetry streaming over Wi-Fi without mixed-content browser restrictions.
                 </p>
               </div>
 

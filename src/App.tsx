@@ -18,6 +18,7 @@ import { AerisHistoryView } from './components/AerisHistoryView';
 import { AerisAnalyticsView } from './components/AerisAnalyticsView';
 import { AerisSettingsView } from './components/AerisSettingsView';
 import { EndpointSettingsModal } from './components/EndpointSettingsModal';
+import { AerisConnectionModal } from './components/AerisConnectionModal';
 
 import {
   ESPTelemetry,
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
   // Navigation & View State ('dashboard' | 'live' | 'history' | 'analytics' | 'settings')
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isConnectionModalOpen, setIsConnectionModalOpen] = useState<boolean>(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const [isAlarmPopupDismissed, setIsAlarmPopupDismissed] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -47,7 +49,11 @@ export const App: React.FC = () => {
   // Connectivity & Architecture State
   const [mode, setMode] = useState<ConnectionMode>('simulation');
   const [directEndpoint, setDirectEndpoint] = useState<string>(DEFAULT_ESP32_CONFIG.endpoint);
-  const [cloudEndpoint, setCloudEndpoint] = useState<string>('http://localhost:4000');
+  const [cloudEndpoint, setCloudEndpoint] = useState<string>(
+    typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
+      ? window.location.origin
+      : 'https://gasdetection.vercel.app'
+  );
   const [deviceId, setDeviceId] = useState<string>('AERIS-01');
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(DEFAULT_ESP32_CONFIG.pollIntervalMs);
 
@@ -173,7 +179,7 @@ export const App: React.FC = () => {
         // Cloud API
         const data = await fetchCloudCurrent(cloudEndpoint, deviceId, 2500);
         setTelemetry(data);
-        setConnectionStatus(data.deviceOnline ? 'connected' : 'offline');
+        setConnectionStatus(data.deviceOnline ? 'connected' : 'connecting');
         consecutiveErrorsRef.current = 0;
         setLastUpdatedAt(new Date());
         appendHistory({ adc: data.adc, threshold: data.threshold });
@@ -358,7 +364,7 @@ export const App: React.FC = () => {
         connectionStatus={connectionStatus}
         deviceId={deviceId}
         deviceIp="192.168.1.85"
-        onOpenDeviceInfo={() => setIsSettingsModalOpen(true)}
+        onOpenDeviceInfo={() => setIsConnectionModalOpen(true)}
         demoPreset={demoPreset}
         onSetPreset={handleSetPreset}
         isMuted={isMuted}
@@ -384,13 +390,59 @@ export const App: React.FC = () => {
               <AerisHeaderBar
                 connectionStatus={connectionStatus}
                 mode={mode}
+                isCloudOnline={Boolean(telemetry.deviceOnline)}
                 isMuted={isMuted}
                 onToggleMute={() => setIsMuted(!isMuted)}
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
+                onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
                 onOpenNotifications={() => setIsNotificationModalOpen(true)}
                 onConnectUsb={handleConnectUsbSerial}
+                onSelectMode={(newMode) => {
+                  setMode(newMode);
+                  if (newMode !== 'simulation') {
+                    setDemoPreset('dynamic');
+                  }
+                }}
                 unreadAlertsCount={isAlarm ? 2 : 1}
               />
+
+              {/* Wi-Fi Cloud Live Stream Banner */}
+              {mode === 'cloud' && (
+                <div className="w-full bg-[#1A1D20] text-[#EDE9E1] px-4 py-2.5 rounded-2xl flex items-center justify-between text-xs font-mono shadow-sm animate-fade-in border border-[#2D3136]">
+                  <div className="flex items-center space-x-2.5 truncate">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                        telemetry.deviceOnline
+                          ? 'bg-[#4E8168] animate-pulse'
+                          : 'bg-[#E5A038] animate-pulse'
+                      }`}
+                    />
+                    <span className="text-[#8E9399] uppercase font-bold text-[10px] tracking-wider shrink-0">
+                      Wi-Fi Cloud Sync:
+                    </span>
+                    <span className="truncate text-white font-semibold">
+                      {telemetry.deviceOnline
+                        ? `Streaming live from ESP32 (${deviceId}) · ADC: ${telemetry.adc} · Threshold: ${telemetry.threshold}`
+                        : `Listening at ${cloudEndpoint.replace(/\/+$/, '')}/api/telemetry · Waiting for ESP32 packets...`}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 shrink-0 pl-3">
+                    <span
+                      className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                        telemetry.deviceOnline ? 'text-[#4E8168]' : 'text-[#E5A038]'
+                      }`}
+                    >
+                      {telemetry.deviceOnline ? 'Cloud Stream Active' : 'Waiting for ESP32'}
+                    </span>
+                    <button
+                      onClick={() => setIsConnectionModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-[#2D3136] hover:bg-[#3E434B] text-white text-[10px] font-sans font-bold transition-colors cursor-pointer"
+                    >
+                      Wi-Fi Guide
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* USB Live Stream Banner (Displays raw serial data as it changes) */}
               {mode === 'usb_serial' && (
@@ -563,7 +615,27 @@ export const App: React.FC = () => {
         onOpenSettings={() => setCurrentTab('settings')}
       />
 
-      {/* 4. Connectivity & Configuration Modal (Quick Access) */}
+      {/* 4. ESP32 Hardware Connection Hub Modal (Wi-Fi Cloud & USB Serial) */}
+      <AerisConnectionModal
+        isOpen={isConnectionModalOpen}
+        onClose={() => setIsConnectionModalOpen(false)}
+        mode={mode}
+        connectionStatus={connectionStatus}
+        telemetry={telemetry}
+        cloudEndpoint={cloudEndpoint}
+        deviceId={deviceId}
+        onSelectMode={(newMode) => {
+          setMode(newMode);
+          if (newMode !== 'simulation') setDemoPreset('dynamic');
+        }}
+        onConnectUsb={handleConnectUsbSerial}
+        onSaveCloudConfig={(newEndpoint, newDeviceId) => {
+          setCloudEndpoint(newEndpoint);
+          setDeviceId(newDeviceId);
+        }}
+      />
+
+      {/* 5. Connectivity & Architecture Modal (Advanced Settings) */}
       <EndpointSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}

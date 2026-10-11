@@ -60,11 +60,11 @@ export const AerisSettingsView: React.FC<AerisSettingsViewProps> = ({
   const handleResetDefaults = () => {
     setLocalMode('simulation');
     setLocalDirect('http://192.168.4.1/api');
-    setLocalCloud('http://localhost:4000');
-    setLocalDevice('aeris-esp32-01');
+    setLocalCloud('https://gasdetection.vercel.app');
+    setLocalDevice('AERIS-01');
     setLocalInterval(2000);
     onUpdateThreshold(1800);
-    onSaveConfig('simulation', 'http://192.168.4.1/api', 'http://localhost:4000', 'aeris-esp32-01', 2000);
+    onSaveConfig('simulation', 'http://192.168.4.1/api', 'https://gasdetection.vercel.app', 'AERIS-01', 2000);
     setSavedNotice(true);
     setTimeout(() => setSavedNotice(false), 2500);
   };
@@ -189,7 +189,7 @@ export const AerisSettingsView: React.FC<AerisSettingsViewProps> = ({
                 value={localCloud}
                 onChange={(e) => setLocalCloud(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-aeris-border bg-[#FAF9F6] text-xs font-mono font-bold text-[#17191C] focus:outline-none focus:border-[#588E75]"
-                placeholder="https://your-aeris.vercel.app/api"
+                placeholder="https://gasdetection.vercel.app"
               />
             </div>
             <div>
