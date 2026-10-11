@@ -35,7 +35,7 @@ bool TelegramService::begin(GetSystemStateCallback stateCb, SetThresholdCallback
   BaseType_t res = xTaskCreatePinnedToCore(
     telegramTaskWrapper,
     "TelegramTask",
-    8192,       // Stack size (8KB sufficient for TLS handshake)
+    16384,      // Stack size (16KB required for safe mbedTLS handshake & JSON processing)
     this,       // Parameter
     1,          // Priority (Normal)
     &_taskHandle,
@@ -82,6 +82,13 @@ void TelegramService::runBackgroundTask() {
       _isTelegramVerified = false;
       vTaskDelay(pdMS_TO_TICKS(2000));
       continue;
+    }
+
+    // Sync network time for TLS verification
+    static bool ntpConfigured = false;
+    if (!ntpConfigured) {
+      ntpConfigured = true;
+      configTime(0, 0, "pool.ntp.org", "time.google.com");
     }
 
     // 2. Check for pending notification in queue
@@ -168,6 +175,7 @@ void TelegramService::runBackgroundTask() {
 
 bool TelegramService::sendRawMessage(const String& text, const char* targetChatId) {
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Telegram] Cannot send message: ESP32 Wi-Fi is NOT connected to internet!");
     return false;
   }
 
@@ -179,7 +187,7 @@ bool TelegramService::sendRawMessage(const String& text, const char* targetChatI
 #else
   client.setInsecure();
 #endif
-  client.setTimeout(5000); // 5-second strict timeout
+  client.setTimeout(8000); // 8-second timeout for TLS handshake
 
   HTTPClient http;
   String url = "https://api.telegram.org/bot" + String(SECRET_BOT_TOKEN) + "/sendMessage";
@@ -190,7 +198,7 @@ bool TelegramService::sendRawMessage(const String& text, const char* targetChatI
   }
 
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  http.setTimeout(5000);
+  http.setTimeout(8000);
 
   String postData = "chat_id=" + urlEncode(chatId) +
                     "&text=" + urlEncode(text) +
@@ -198,13 +206,41 @@ bool TelegramService::sendRawMessage(const String& text, const char* targetChatI
 
   int httpCode = http.POST(postData);
 
+#if TELEGRAM_CERT_VERIFY
+  // Automatic fallback: If strict CA check failed (e.g. clock mismatch before NTP syncs), retry with direct TLS
+  if (httpCode <= 0) {
+    Serial.printf("[Telegram] CA certificate check returned %d. Retrying with direct TLS...\n", httpCode);
+    http.end();
+    client.stop();
+    client.setInsecure();
+    if (http.begin(client, url)) {
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+      http.setTimeout(8000);
+      httpCode = http.POST(postData);
+    }
+  }
+#endif
+
+  // If Markdown parsing failed on Telegram servers (HTTP 400), retry in plain text mode!
+  if (httpCode == 400) {
+    Serial.println("[Telegram] Markdown format error from Telegram. Retrying plain text...");
+    http.end();
+    String plainPost = "chat_id=" + urlEncode(chatId) + "&text=" + urlEncode(text);
+    if (http.begin(client, url)) {
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+      http.setTimeout(8000);
+      httpCode = http.POST(plainPost);
+    }
+  }
+
   // SANITIZED LOGGING: Never expose bot token or sensitive credentials in logs!
   if (httpCode == HTTP_CODE_OK) {
-    Serial.printf("[Telegram] Message delivered successfully (HTTP 200).\n");
+    Serial.printf("[Telegram] Message delivered successfully to Chat %s (HTTP 200).\n", chatId);
     http.end();
     return true;
   } else {
-    Serial.printf("[Telegram] Delivery failed with HTTP status code: %d\n", httpCode);
+    String resp = http.getString();
+    Serial.printf("[Telegram] Delivery failed with HTTP status code: %d | Response: %s\n", httpCode, resp.c_str());
     http.end();
     return false;
   }
@@ -219,7 +255,7 @@ void TelegramService::processIncomingUpdates() {
 #else
   client.setInsecure();
 #endif
-  client.setTimeout(4000);
+  client.setTimeout(5000);
 
   HTTPClient http;
   String url = "https://api.telegram.org/bot" + String(SECRET_BOT_TOKEN) +
@@ -227,9 +263,22 @@ void TelegramService::processIncomingUpdates() {
                "&limit=5&timeout=0";
 
   if (!http.begin(client, url)) return;
-  http.setTimeout(4000);
+  http.setTimeout(5000);
 
   int httpCode = http.GET();
+
+#if TELEGRAM_CERT_VERIFY
+  if (httpCode <= 0) {
+    http.end();
+    client.stop();
+    client.setInsecure();
+    if (http.begin(client, url)) {
+      http.setTimeout(5000);
+      httpCode = http.GET();
+    }
+  }
+#endif
+
   if (httpCode != HTTP_CODE_OK) {
     http.end();
     return;

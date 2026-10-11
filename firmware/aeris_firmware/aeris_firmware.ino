@@ -26,13 +26,14 @@
 #define PIN_LED_GREEN 18   // Safe State Green/Blue Indicator LED
 #define PIN_LED_RED   19   // Hazard State Red Alert Strobe LED
 #define PIN_BUZZER    23   // Active Siren / Piezo Buzzer (2N2222 NPN Driven)
+#define ENABLE_FLAME_SENSOR 0 // Set to 1 only if physical flame sensor is wired to GPIO 35 (prevents floating pin false alarms)
 
 // -----------------------------------------------------------------------------
 // 2. SAFETY THRESHOLDS & HYSTERESIS
 // -----------------------------------------------------------------------------
 int gasThresholdHigh = 1800; // Trip ADC value (Alarm activates >= 1800)
 int gasThresholdLow  = 1650; // Recovery ADC value (Alarm clears < 1650)
-const unsigned long WARMUP_MS = 20000; // 20-second sensor stabilization window
+const unsigned long WARMUP_MS = 5000; // 5-second initial sensor stabilization window
 
 // -----------------------------------------------------------------------------
 // 3. SYSTEM STATE & TIMING
@@ -274,14 +275,19 @@ void loop() {
   currentGasVal = readGasVal();
   currentPinVolts = (currentGasVal / 4095.0f) * 3.3f;
   currentSensorVolts = currentPinVolts / 0.625f; // Compensate for 12k/20k voltage divider
+
+#if ENABLE_FLAME_SENSOR
   isFlameDetected = (digitalRead(PIN_FLAME) == LOW); // Active LOW on standard flame modules
+#else
+  isFlameDetected = false;
+#endif
 
   // 2. Evaluate Alarm Condition (with Hysteresis)
   bool gasExceeded = (currentGasVal >= gasThresholdHigh);
-  if (currentGasVal < gasThresholdLow && !isFlameDetected) {
-    isAlarmActive = false;
-  } else if (gasExceeded || isFlameDetected) {
+  if (gasExceeded || isFlameDetected) {
     isAlarmActive = true;
+  } else if (currentGasVal < gasThresholdLow && !isFlameDetected) {
+    isAlarmActive = false;
   }
 
   // 3. Local Hardware Actuators (Strict priority: Local safety never depends on network)
@@ -302,41 +308,44 @@ void loop() {
     digitalWrite(PIN_BUZZER, LOW);
   }
 
-  // 4. Telegram Notification Engine (Edge-Triggered with Cooldown)
-  if (WiFi.status() == WL_CONNECTED) {
-    // 4A. One-Time Startup Notification once Wi-Fi connects and initial baseline stabilizes
-    if (!startupNotifSent && (now - systemStartTime > 4000)) {
-      startupNotifSent = true;
-      telegramService.queueNotification(NOTIF_STARTUP, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
-      Serial.println("[Telegram] Queued initial Startup notification.");
-    }
+  // 4. Telegram Notification Engine (Queues into FreeRTOS Core 0 background task)
+  // 4A. One-Time Startup Notification once baseline stabilizes
+  if (!startupNotifSent && (now - systemStartTime > 3000)) {
+    startupNotifSent = true;
+    telegramService.queueNotification(NOTIF_STARTUP, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
+    Serial.println("[Telegram] Startup notification enqueued.");
+  }
 
-    // 4B. Alarm State Transitions (Only after warmup phase completes)
-    if (isSystemReady) {
-      // EDGE 1: SAFE -> ALARM (Gas reading crosses threshold)
-      if (isAlarmActive && !prevAlarmState) {
-        // Enforce configurable cooldown between distinct alert events
-        if (now - lastAlarmTime >= ((unsigned long)TELEGRAM_COOLDOWN_SEC * 1000UL) || lastAlarmTime == 0) {
-          lastAlarmTime = now;
-          telegramService.queueNotification(NOTIF_GAS_ALARM, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
-          Serial.println("[Telegram] Queued Critical Gas Alarm notification!");
-        }
-        prevAlarmState = true;
+  // 4B. Alarm State Transitions (Active once warmup completes)
+  if (isSystemReady) {
+    // EDGE 1: SAFE -> ALARM (Gas reading crosses threshold)
+    if (isAlarmActive && !prevAlarmState) {
+      prevAlarmState = true;
+      if (now - lastAlarmTime >= ((unsigned long)TELEGRAM_COOLDOWN_SEC * 1000UL) || lastAlarmTime == 0) {
+        lastAlarmTime = now;
+        bool queued = telegramService.queueNotification(NOTIF_GAS_ALARM, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
+        Serial.printf(">>> [🚨 GAS ALARM TRIP] ADC=%d >= %d! Notification queued: %s <<<\n",
+                      currentGasVal, gasThresholdHigh, queued ? "YES" : "QUEUE_FULL");
+      } else {
+        Serial.printf("[Telegram] Gas trip (ADC=%d) occurred but blocked by cooldown.\n", currentGasVal);
       }
-      // EDGE 2: ALARM -> SAFE (Gas reading falls below hysteresis threshold)
-      else if (!isAlarmActive && prevAlarmState) {
-        telegramService.queueNotification(NOTIF_GAS_RECOVERY, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
-        Serial.println("[Telegram] Queued Gas Recovery notification.");
-        prevAlarmState = false;
-      }
+    }
+    // EDGE 2: ALARM -> SAFE (Gas reading falls below hysteresis threshold)
+    else if (!isAlarmActive && prevAlarmState) {
+      prevAlarmState = false;
+      lastAlarmTime = 0; // Reset cooldown so subsequent gas tests trigger immediately
+      bool queued = telegramService.queueNotification(NOTIF_GAS_RECOVERY, currentGasVal, currentPinVolts, gasThresholdHigh, isFlameDetected);
+      Serial.printf(">>> [✅ GAS RECOVERY] ADC=%d < %d! Recovery notification queued: %s <<<\n",
+                    currentGasVal, gasThresholdLow, queued ? "YES" : "QUEUE_FULL");
     }
   }
 
-  // 5. Periodic Wi-Fi Reconnection Logic (Every 15s if disconnected)
-  if (WiFi.status() != WL_CONNECTED && (now - lastWifiCheck >= 15000)) {
+  // 5. Periodic Wi-Fi Reconnection Logic (Every 8s if disconnected)
+  if (WiFi.status() != WL_CONNECTED && (now - lastWifiCheck >= 8000)) {
     lastWifiCheck = now;
-    Serial.println("[Wi-Fi STA] Attempting non-blocking Wi-Fi reconnect...");
-    WiFi.reconnect();
+    Serial.printf("[Wi-Fi STA WARNING] Disconnected! Reconnecting to '%s'...\n", SECRET_WIFI_SSID);
+    WiFi.disconnect();
+    WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
   }
 
   // 6. Serial Telemetry Logging (Every 1000ms)
