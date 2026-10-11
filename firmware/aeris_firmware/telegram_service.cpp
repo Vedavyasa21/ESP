@@ -351,7 +351,7 @@ void TelegramService::handleCommand(const String& command, const String& fromCha
   String baseCmd = (spaceIdx != -1) ? cmd.substring(0, spaceIdx) : cmd;
   baseCmd.toLowerCase();
 
-  if (baseCmd == "/start") {
+  if (baseCmd == "/start" || baseCmd == "start" || baseCmd == "hello" || baseCmd == "hi") {
     String resp = "👋 *Welcome to AERIS ESP32 Gas Monitor*\n";
     resp += "━━━━━━━━━━━━━━━━━━━━\n";
     resp += "Real-time safety telemetry and emergency notification bot.\n\n";
@@ -363,7 +363,7 @@ void TelegramService::handleCommand(const String& command, const String& fromCha
     resp += "🛡️ System is actively monitoring in the background.";
     sendRawMessage(resp, fromChatId.c_str());
   }
-  else if (baseCmd == "/status") {
+  else if (baseCmd == "/status" || baseCmd == "status") {
     int adc = 0;
     float volts = 0.0;
     int thresh = 1800;
@@ -387,7 +387,7 @@ void TelegramService::handleCommand(const String& command, const String& fromCha
     resp += "━━━━━━━━━━━━━━━━━━━━";
     sendRawMessage(resp, fromChatId.c_str());
   }
-  else if (baseCmd == "/threshold") {
+  else if (baseCmd == "/threshold" || baseCmd == "threshold") {
     int adc = 0;
     float volts = 0.0;
     int thresh = 1800;
@@ -411,7 +411,7 @@ void TelegramService::handleCommand(const String& command, const String& fromCha
 #endif
     sendRawMessage(resp, fromChatId.c_str());
   }
-  else if (baseCmd == "/help") {
+  else if (baseCmd == "/help" || baseCmd == "help") {
     String resp = "📖 *AERIS Supported Commands*\n";
     resp += "━━━━━━━━━━━━━━━━━━━━\n";
     resp += "• `/start` — Display welcome greeting & overview\n";
